@@ -20,7 +20,7 @@ yarn.lock
 *.launch
 .settings/
 *.sublime-workspace
-
+.turbo/
 # Visual Studio Code
 .vscode/*
 !.vscode/settings.json

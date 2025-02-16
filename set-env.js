@@ -1,4 +1,4 @@
-const fs = require('fs');
+const fs = require('node:fs');
 // Configure Angular `environment.ts` file path
 const targetPath = './src/environments/environment.ts';
 // Load node modules
@@ -11,9 +11,10 @@ const envConfigFile = `export const environment = {
 
 console.log(envConfigFile);
 fs.writeFile(targetPath, envConfigFile, (err) => {
-	if (err) {
-		throw console.error(err);
-	} else {
-		console.log((`Angular environment.ts file generated correctly at ${targetPath} \n`));
-	}
+  if (err) {
+    throw console.error(err);
+  }
+  console.log(
+    `Angular environment.ts file generated correctly at ${targetPath} \n`
+  );
 });
