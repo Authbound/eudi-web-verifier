@@ -12,7 +12,6 @@
     "stylelint": "npx stylelint \"src/**/*.{css,scss}\" --fix",
     "lint": "ng lint --fix",
     "pre-build": "test && lint",
-    "dev": "ng serve",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
   },
