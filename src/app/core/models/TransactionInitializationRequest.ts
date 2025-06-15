@@ -8,6 +8,8 @@ export type TransactionInitializationRequest =
 export type BaseTransactionInitializationRequest = {
   type: 'id_token' | 'vp_token' | 'vp_token id_token';
   nonce: string;
+  request_uri_method: 'get' | 'post';
+  issuer_chain?: string;
 };
 
 export type PresentationQuery =

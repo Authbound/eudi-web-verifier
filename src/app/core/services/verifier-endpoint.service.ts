@@ -1,6 +1,6 @@
 import {Injectable} from '@angular/core';
 import {Observable} from 'rxjs';
-import {map, tap} from 'rxjs/operators';
+import {map, retry, tap} from 'rxjs/operators';
 import {HttpService} from '@network/http/http.service';
 import {LocalStorageService} from './local-storage.service';
 import * as constants from '@core/constants/general';
@@ -11,9 +11,12 @@ import {WalletResponse} from "@core/models/WalletResponse";
 import {EventLog} from "@core/models/EventLog";
 import { HttpHeaders } from "@angular/common/http";
 import {ActiveTransaction} from "@core/models/ActiveTransaction";
+import { ClientMetadata } from '@app/core/models/ClientMetadata';
+import { SessionStorageService } from './session-storage.service';
 
 const SAME_DEVICE_UI_RE_ENTRY_URL = '/get-wallet-code?response_code={RESPONSE_CODE}';
 const PRESENTATIONS_ENDPOINT = 'ui/presentations';
+const CLIENT_METADATA_ENDPOINT = 'ui/clientMetadata';
 const VALIDATE_SD_JWT_VC_PRESENTATION_ENDPOINT = 'utilities/validations/sdJwtVc';
 
 @Injectable()
@@ -22,6 +25,7 @@ export class VerifierEndpointService {
   constructor(
     private readonly httpService: HttpService,
     private readonly localStorageService: LocalStorageService,
+    private readonly sessionStorageService: SessionStorageService,
     private readonly deviceDetectorService: DeviceDetectorService,
   ) {
   }
@@ -72,6 +76,8 @@ export class VerifierEndpointService {
   }
 
   validateSdJwtVc(payload: string, nonce: string): Observable<any> {
+    const issuerChain = this.sessionStorageService.get(constants.ISSUER_CHAIN) ?? undefined;
+
     const headers = new HttpHeaders({
       'Content-Type': 'application/x-www-form-urlencoded'
     });
@@ -79,8 +85,16 @@ export class VerifierEndpointService {
     const body = new URLSearchParams();
     body.set('sd_jwt_vc', payload);
     body.set('nonce', nonce);
+    issuerChain && body.set('issuer_chain', issuerChain);
 
     return this.httpService.post<any, string>(VALIDATE_SD_JWT_VC_PRESENTATION_ENDPOINT, body.toString(), {headers})
+  }
+
+  getClientMetadata(): Observable<ClientMetadata> {
+    return this.httpService.get<ClientMetadata>(CLIENT_METADATA_ENDPOINT)
+      .pipe(
+        retry(3)
+      )
   }
 
   private getTransactionData(event: EventLog): string[] {

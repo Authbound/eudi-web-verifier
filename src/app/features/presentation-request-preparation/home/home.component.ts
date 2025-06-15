@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { NavigateService } from '@app/core/services/navigate.service';
 import { HOME_ACTIONS } from '@core/constants/pages-actions';
 import { BodyAction } from '@app/shared/elements/body-actions/models/BodyAction';
@@ -7,7 +7,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { SharedModule } from '@shared/shared.module';
 import { WalletLayoutComponent } from '@core/layout/wallet-layout/wallet-layout.component';
 import { MatDialogModule } from '@angular/material/dialog';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 import { SupportedAttestationsComponent } from '@features/presentation-request-preparation/components/supported-attestations/supported-attestations.component';
 import { MatStepperModule } from '@angular/material/stepper';
 import {
@@ -27,8 +27,12 @@ import { MatIconModule } from '@angular/material/icon';
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { AttributesSelectionEvent } from '../models/AttributesSelection';
-import { PresentationDefinitionService } from '@app/core/services/presentation-definition-service';
+import { PresentationDefinitionService } from '@app/core/services/presentation-definition.service';
 import { DCQLService } from '@app/core/services/dcql-service';
+import { fallbackClientMetadata, MsoMdocVpFormat, SdJwtVcVpFormat } from '@app/core/models/ClientMetadata';
+import { Subject, takeUntil } from 'rxjs';
+import { SessionStorageService } from '@app/core/services/session-storage.service';
+import { ISSUER_CHAIN } from '@app/core/constants/general';
 
 @Component({
   imports: [
@@ -55,19 +59,22 @@ import { DCQLService } from '@app/core/services/dcql-service';
   templateUrl: './home.component.html',
   styleUrls: ['./home.component.scss'],
 })
-export class HomeComponent {
+export class HomeComponent implements OnInit, OnDestroy {
   constructor(
     private readonly navigateService: NavigateService,
     private readonly verifierEndpointService: VerifierEndpointService,
     private readonly presentationDefinitionService: PresentationDefinitionService,
-    private readonly dcqlService: DCQLService
+    private readonly dcqlService: DCQLService,
+    private readonly sessionStorageService: SessionStorageService,
   ) {}
 
   actions: BodyAction[] = HOME_ACTIONS;
 
   queryTypeControl = new FormControl('prex');
+  requestUriMethodControl = new FormControl('get');
 
-  private _formBuilder = inject(FormBuilder);
+
+  private readonly _formBuilder = inject(FormBuilder);
   formGroup = this._formBuilder.group({
     selectAttestationCtrl: ['', Validators.required],
   });
@@ -75,21 +82,45 @@ export class HomeComponent {
   selectedAttestations: AttestationSelection[] | null = null;
   selectedAttributes: { [id: string]: string[] } | null = null;
   selectedPresentationType: 'dcql' | 'prex' = 'prex';
+  selectedRequestUriMethod: 'get' | 'post' = 'get';
 
   initializationRequest: TransactionInitializationRequest | null = null;
+
+  private readonly destroy$ = new Subject<void>();
+  vpFormatsPerType: { [key: string]: SdJwtVcVpFormat | MsoMdocVpFormat } = {};
+
+  ngOnInit(): void {
+    this.verifierEndpointService.getClientMetadata()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (clientMetadata) => {
+          this.vpFormatsPerType = clientMetadata.vp_formats;
+        },
+        error: (err) => {
+          console.error('Error fetching client metadata from backend. Using fallback client metadata', err);
+          this.vpFormatsPerType = fallbackClientMetadata.vp_formats;
+        }
+      });
+  }
+  
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   handleSelectionChangedEvent($event: AttestationSelection[]) {
     this.selectedAttestations = $event;
   }
 
   handleAttributesCollectedEvent($event: AttributesSelectionEvent) {
-    if ($event != null && $event.selectedAttributes != null) {
+    if ($event?.selectedAttributes) {
       this.selectedAttributes = $event.selectedAttributes;
 
       this.initializationRequest = this.prepareInitializationRequest(
         this.selectedPresentationType,
         this.selectedAttestations!,
-        this.selectedAttributes
+        this.selectedAttributes,
+        this.selectedRequestUriMethod
       );
     } else {
       this.selectedAttributes = null;
@@ -102,8 +133,24 @@ export class HomeComponent {
     if (this.selectedAttestations && this.selectedAttributes) {
       this.initializationRequest = this.prepareInitializationRequest(
         this.selectedPresentationType,
-        this.selectedAttestations!,
-        this.selectedAttributes
+        this.selectedAttestations,
+        this.selectedAttributes,
+        this.selectedRequestUriMethod
+      );
+    } else {
+      this.initializationRequest = null;
+    }
+  }
+  
+  handleRequestUriMethodChangedEvent($event: string) {
+    this.selectedRequestUriMethod = $event as 'get' | 'post';
+    
+    if (this.selectedAttestations && this.selectedAttributes) {
+      this.initializationRequest = this.prepareInitializationRequest(
+        this.selectedPresentationType,
+        this.selectedAttestations,
+        this.selectedAttributes,
+        this.selectedRequestUriMethod
       );
     } else {
       this.initializationRequest = null;
@@ -113,12 +160,26 @@ export class HomeComponent {
   private prepareInitializationRequest(
     presentationQueryType: 'dcql' | 'prex',
     selectedAttestations: AttestationSelection[],
-    selectedAttributes: { [id: string]: string[] }
+    selectedAttributes: { [id: string]: string[] },
+    selectedRequestUriMethod: 'get' | 'post'
   ): TransactionInitializationRequest {
+
+    const issuerChain = this.sessionStorageService.get(ISSUER_CHAIN) ?? undefined;
+
     if (presentationQueryType === 'dcql') {
-      return this.dcqlService.dcqlPresentationRequest(selectedAttestations, selectedAttributes);
+      return this.dcqlService.dcqlPresentationRequest(
+        selectedAttestations, 
+        selectedAttributes, 
+        selectedRequestUriMethod, 
+        issuerChain);
     } else {
-      return this.presentationDefinitionService.presentationDefinitionRequest(selectedAttestations, selectedAttributes);
+      return this.presentationDefinitionService.presentationDefinitionRequest(
+        selectedAttestations, 
+        selectedAttributes, 
+        this.vpFormatsPerType, 
+        selectedRequestUriMethod,
+        issuerChain
+      );
     }
   }
 

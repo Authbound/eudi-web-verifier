@@ -20,14 +20,16 @@ import {
 export class DCQLService {
   dcqlPresentationRequest(
     selectedAttestations: AttestationSelection[],
-    selectedAttributes: { [id: string]: string[] }
+    selectedAttributes: { [id: string]: string[] },
+    selectedRequestUriMethod: 'get' | 'post',
+    issuerChain?: string
   ): DCQLTransactionRequest {
     let dcqlQueries: CredentialQuery[] = selectedAttestations.map(
       (attestation, index) =>
         this.dcqlQueryOf(
           `query_${index}`,
           attestation.type,
-          attestation.format!!,
+          attestation.format!,
           attestation.attributeSelectionMethod ===
             AttributeSelectionMethod.ALL_ATTRIBUTES
             ? []
@@ -38,9 +40,11 @@ export class DCQLService {
     return {
       type: 'vp_token',
       dcql_query: {
-        credentials: dcqlQueries!,
+        credentials: dcqlQueries,
       },
       nonce: uuidv4(),
+      request_uri_method: selectedRequestUriMethod,
+      issuer_chain: issuerChain,
     };
   }
 
@@ -54,7 +58,7 @@ export class DCQLService {
 
     let query: CredentialQuery = {
       id: queryId,
-      format: format === AttestationFormat.MSO_MDOC ? 'mso_mdoc' : 'dc+sd-jwt',
+      format: format,
       meta:
         format === AttestationFormat.MSO_MDOC
           ? {
@@ -71,7 +75,7 @@ export class DCQLService {
         selectedAttributes!.includes(dataElement.identifier)
       )
       .map((dataElement) => {
-        return attestation!!.claimPath(dataElement);
+        return attestation!.claimQuery(dataElement);
       });
 
     if (claims.length > 0) {
